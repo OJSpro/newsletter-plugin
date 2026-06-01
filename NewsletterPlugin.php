@@ -16,6 +16,7 @@ namespace APP\plugins\generic\newsletter;
 use APP\core\Application;
 use PKP\plugins\GenericPlugin;
 use PKP\plugins\Hook;
+use PKP\config\Config;
 
 class NewsletterPlugin extends GenericPlugin
 {
@@ -26,8 +27,8 @@ class NewsletterPlugin extends GenericPlugin
     {
         if (parent::register($category, $path, $mainContextId)) {
             if ($this->getEnabled($mainContextId)) {
-                // Intercept LoadHandler to provide our subscription endpoint
                 Hook::add('LoadHandler', [$this, 'callbackHandleContent']);
+                Hook::add('TemplateManager::display', [$this, 'assignRecaptchaKey']);
             }
             return true;
         }
@@ -48,6 +49,18 @@ class NewsletterPlugin extends GenericPlugin
     public function getDescription()
     {
         return 'Enables newsletter subscription by registering users as Readers in OMP.';
+    }
+
+    /**
+     * Assign reCAPTCHA public key to all frontend templates so newsletter forms can render the widget
+     */
+    public function assignRecaptchaKey($hookName, $args)
+    {
+        $templateMgr = $args[0];
+        if (Config::getVar('captcha', 'recaptcha') && Config::getVar('captcha', 'recaptcha_public_key')) {
+            $templateMgr->assign('recaptchaPublicKey', Config::getVar('captcha', 'recaptcha_public_key'));
+        }
+        return false;
     }
 
     /**

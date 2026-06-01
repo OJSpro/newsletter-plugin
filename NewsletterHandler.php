@@ -48,6 +48,21 @@ class NewsletterHandler extends \PKP\handler\PKPHandler
             return $request->redirect(null, 'index');
         }
 
+        // Honeypot: bots fill hidden fields, humans don't
+        $honeypot = $request->getUserVar('website');
+        if (!empty($honeypot)) {
+            return $this->_jsonResponse(['status' => 'error', 'message' => 'Subscription failed. Please try again.']);
+        }
+
+        // reCAPTCHA v2 verification (reuses site-wide captcha config)
+        $recaptchaToken = $request->getUserVar('g-recaptcha-response');
+        $recaptchaSecret = Config::getVar('captcha', 'recaptcha_private_key');
+        if (!empty($recaptchaSecret)) {
+            if (empty($recaptchaToken) || !$this->_verifyRecaptcha($recaptchaToken, $recaptchaSecret)) {
+                return $this->_jsonResponse(['status' => 'error', 'message' => 'reCAPTCHA verification failed. Please try again.']);
+            }
+        }
+
         $email = $request->getUserVar('email');
         $firstName = $request->getUserVar('firstname');
         $lastName = $request->getUserVar('lastname');
@@ -171,6 +186,26 @@ class NewsletterHandler extends \PKP\handler\PKPHandler
 
         // Fallback for non-AJAX: Redirect back to home with a success flag
         $request->redirect(null, 'index', null, null, ['newsletterSubscribed' => 1]);
+    }
+
+    /**
+     * Verify reCAPTCHA v2 token with Google API
+     */
+    private function _verifyRecaptcha($token, $secretKey)
+    {
+        $data = http_build_query(['secret' => $secretKey, 'response' => $token]);
+        $context = stream_context_create([
+            'http' => [
+                'method'  => 'POST',
+                'header'  => 'Content-Type: application/x-www-form-urlencoded',
+                'content' => $data,
+                'timeout' => 5,
+            ]
+        ]);
+        $result = @file_get_contents('https://www.google.com/recaptcha/api/siteverify', false, $context);
+        if (!$result) return false;
+        $json = json_decode($result, true);
+        return isset($json['success']) && $json['success'] === true;
     }
 
     /**
